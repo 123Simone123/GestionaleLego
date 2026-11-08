@@ -14,11 +14,14 @@ Requisiti espressi dall'utente:
 | R1 | App installabile come APK sul telefono | Progetto Android nativo; APK compilato da GitHub Actions (sez. 8) |
 | R2 | Fotografare uno o più oggetti per volta; l'app li riconosce e li aggiunge al catalogo | Rilevamento multi-oggetto sul telefono + riconoscimento online (sez. 6) |
 | R3 | Struttura a oggetti: il set contiene l'immagine originale e tutte le sue informazioni | Classe `LegoItem` con sottoclassi `LegoSet`, `Minifigure`, `Part` (sez. 4) |
-| R4 | Tutto salvato sul telefono | Database Room e file nella memoria privata dell'app (sez. 4.3) |
+| R4 | Tutto salvato sul telefono | Database Room e file nella memoria privata dell'app (sez. 4.4) |
 | R5 | Usare API/siti per le informazioni | Brickognize (riconoscimento) e Rebrickable (dati ufficiali) (sez. 5) |
 | R6 | Le foto scattate restano nell'app | Le foto vengono copiate nella memoria privata dell'app, mai nella galleria |
 | R7 | Sicurezza non prioritaria (uso locale) | Nessuna cifratura né login; chiave di firma APK inclusa nel repository |
 | R8 | Documentazione scritta durante il progetto | Questo file |
+| R9 | *(Agg. 2)* Inventario per le esposizioni: contenitori e loro contenuto (dal catalogo o scritto a mano) | Contenitori con righe e quantità (sez. 4.3, 7.1) |
+| R10 | *(Agg. 2)* Colonne andata e ritorno per verificare che torni tutto | Esposizioni con checklist per evento (sez. 7.2) |
+| R11 | *(Agg. 2)* Migliorare la grafica | Barra in basso, catalogo a griglia/lista, nuovo tema (sez. 7.3) |
 
 ### 1.1 Decisioni prese con l'utente
 
@@ -33,6 +36,10 @@ Domande poste durante l'analisi e risposte ricevute (8 novembre 2026):
 | Più oggetti in una foto? | Rilevamento automatico più correzione manuale dei riquadri |
 | Si possono inviare i ritagli delle foto a Brickognize? | Sì. Le foto restano comunque salvate solo nell'app |
 | *(Aggiornamento 1)* Cosa fare se un oggetto è già in catalogo? | Chiedere ogni volta: aggiungere (quantità +1) o saltare |
+| *(Agg. 2)* Andata/ritorno per singola esposizione o checklist unica? | Per evento, con storico |
+| *(Agg. 2)* Cosa si segna nelle colonne? | Solo spunta sì/no |
+| *(Agg. 2)* Un oggetto può stare in più contenitori? | Sì, con quantità |
+| *(Agg. 2)* Migliorie grafiche | Barra in basso, catalogo a griglia, stile più curato, carta bianca sul resto |
 
 Non richiesti, quindi **non** implementati: stato/completezza del set, posizione fisica,
 valore di mercato.
@@ -64,12 +71,14 @@ ui/            Schermate Compose + ViewModel
   scan/        Flusso di scansione (foto → riquadri → conferma)
   detail/      Scheda oggetto (dati, foto, prezzi, note, tag)
   search/      Ricerca manuale su Rebrickable
+  inventory/   Contenitori ed esposizioni (checklist andata/ritorno)
   settings/    Chiave API, backup
-domain/        Modello a oggetti (LegoItem e sottoclassi)
+domain/        Modello a oggetti (LegoItem e sottoclassi; Container, Exhibition)
 data/
   db/          Room: entità, DAO, database
   remote/      Client Brickognize e Rebrickable
-  CatalogRepository   Unico punto di accesso ai dati per la UI
+  CatalogRepository   Accesso al catalogo per la UI
+  InventoryRepository Contenitori, righe, esposizioni e spunte
   PhotoStorage        Gestione file (foto, ritagli, immagini ufficiali)
   Backup              Esporta/importa zip
 recognition/   Pipeline di riconoscimento (ML Kit + Brickognize + Rebrickable)
@@ -134,7 +143,40 @@ non viene duplicato**; la quantità aumenta di 1 e la nuova foto viene aggiunta.
 **tags** (`id`, `name` univoco) e **item_tags** (`itemId`, `tagId`): relazione molti-a-molti.
 I tag non più usati vengono eliminati automaticamente.
 
-### 4.3 File sul telefono
+### 4.3 Inventario (schema versione 2)
+
+Modello a oggetti (`domain/Inventory.kt`):
+
+```
+Container          id, name, description, entries: List<ContainerEntry>
+ContainerEntry     label, quantity, notes; itemId → oggetto del catalogo (null = scritto a mano)
+Exhibition         name, place, startDate, endDate, notes, sections: List<ChecklistSection>
+ChecklistSection   container + rows: List<ChecklistRow>
+ChecklistRow       entry, outbound (andata), returned (ritorno); missing = andata sì e ritorno no
+```
+
+Tabelle:
+
+| Tabella | Colonne | Note |
+|---------|---------|------|
+| containers | id, name, description, createdAt, updatedAt | |
+| container_entries | id, containerId (FK, cascata), itemId (FK → items, SET NULL), label, quantity, notes, position, createdAt | `label` è una copia del nome: se l'oggetto viene eliminato dal catalogo la riga resta leggibile |
+| exhibitions | id, name, place, startDate, endDate (ISO), notes, createdAt | |
+| exhibition_containers | exhibitionId, containerId (PK composta, FK cascata) | contenitori portati all'esposizione |
+| exhibition_checks | exhibitionId, entryId (PK composta, FK cascata), outbound, returned | una riga solo quando si spunta qualcosa |
+
+Lo stesso oggetto del catalogo può comparire in più contenitori, ognuno con la sua quantità.
+Aggiungendo di nuovo un oggetto già presente nello stesso contenitore se ne somma la quantità.
+
+**Migrazione 1 → 2**: automatica (`@AutoMigration`), crea solo le nuove tabelle e non tocca
+il catalogo esistente. Gli schemi JSON delle versioni sono in `app/schemas/` e vanno
+conservati: servono per le migrazioni future. La build su GitHub stampa nel log gli schemi
+generati (codificati in base64), così si possono recuperare anche senza Android Studio.
+
+**Storico**: le spunte sono legate alle righe dei contenitori. Se dopo un'esposizione
+elimini una riga da un contenitore, sparisce anche dalle checklist delle esposizioni passate.
+
+### 4.4 File sul telefono
 
 Tutto nella memoria privata dell'app (`/data/data/com.brickarchivio.app/`):
 
@@ -279,8 +321,42 @@ della scatola ben visibile e a fuoco.
 | Cerca e aggiungi | Aggiunta senza foto: ricerca per numero o nome su Rebrickable. Se l'oggetto è già in catalogo chiede: Aumenta quantità / Apri scheda / Annulla |
 | Dettaglio | Immagine ufficiale, dati, link a Rebrickable/BrickLink, le tue foto (aggiungi/elimina), quantità, prezzo, data e luogo d'acquisto, note, tag; aggiorna dati online; elimina |
 | Impostazioni | Chiave Rebrickable (con verifica), esporta/importa backup, informazioni |
+| Contenitori | Vedi 7.1 |
+| Esposizioni | Vedi 7.2 |
 
 ---
+
+### 7.1 Contenitori
+
+- **Elenco**: per ogni contenitore nome, numero di righe, esemplari totali e anteprima delle immagini.
+- **Dettaglio**: righe con immagine, nome, codice o "Scritto a mano", note e quantità modificabile
+  con − / +. Tocca una riga per modificarla o rimuoverla; tocca l'immagine per aprire l'oggetto.
+- **Aggiungi dal catalogo**: elenco con ricerca; ogni tocco aggiunge 1 esemplare (il numero già
+  presente nel contenitore è indicato a destra).
+- **Aggiungi a mano**: descrizione libera (es. "Pezzi sfusi grigi"), quantità, note.
+- Dalla scheda di un oggetto: sezione **"Dove si trova"** e pulsante **"Metti in un contenitore"**.
+
+### 7.2 Esposizioni (andata e ritorno)
+
+1. Crea l'esposizione (nome, luogo, date, note).
+2. **+ Contenitori**: scegli quelli che porti.
+3. Per ogni contenitore compaiono le sue righe con due colonne di spunte: **Andata** e **Ritorno**.
+   Il menu ⋮ del contenitore permette di spuntare o togliere tutte le spunte di una colonna.
+4. Appena inizi a spuntare il ritorno, le righe partite ma non ancora tornate vengono
+   **evidenziate in rosso** ed elencate in alto in "Partiti ma non tornati".
+5. Il filtro **"Solo non tornati"** mostra solo quelle righe.
+
+Stato mostrato nell'elenco delle esposizioni: *Nessun contenitore*, *Preparazione x/y*
+(andata incompleta), *In esposizione*, *N mancanti al ritorno*, *Tutto tornato ✓*.
+
+### 7.3 Grafica
+
+- Barra in basso con quattro schede: Catalogo, Contenitori, Esposizioni, Impostazioni.
+- Catalogo a **griglia** (copertine grandi) o a **lista**, con un pulsante in alto; la scelta viene ricordata.
+- Tema con rosso, giallo e blu tipici dei mattoncini, schede arrotondate, riepilogo
+  (voci, esemplari, speso), etichette colorate per tipo, schermate vuote con spiegazione.
+- Tema scuro automatico se il telefono è in modalità scura.
+- Icone disegnate appositamente (mattoncino, scatola, bandiera, griglia, lista, fotocamera).
 
 ## 8. Compilazione e installazione
 
@@ -291,7 +367,8 @@ Il workflow `.github/workflows/build-apk.yml` si avvia a ogni push su `main`
 
 1. installa Java 17 e Gradle;
 2. esegue `./gradlew assembleRelease`;
-3. pubblica l'APK sia come *artifact* sia in una **Release** chiamata `build-N`.
+3. pubblica l'APK sia come *artifact* sia in una **Release** chiamata `build-N`
+   (la Release solo per il ramo `main`; il ramo `dev` serve per le prove di compilazione).
 
 Versioni: Gradle 8.14.3, Android Gradle Plugin 8.7.3, Kotlin 2.0.21, compileSdk 35.
 
@@ -345,4 +422,5 @@ I dati esistono solo sul telefono: disinstallare l'app li cancella.
 | Data | Versione | Modifica |
 |------|----------|----------|
 | 2026-11-08 | 1.0 | Prima versione: catalogo, scansione multi-oggetto, ricerca manuale, dettaglio, backup |
+| 2026-11-08 | Aggiornamento 2 | Inventario: contenitori con righe dal catalogo o scritte a mano; esposizioni con checklist andata/ritorno ed evidenza dei mancanti; "Dove si trova" nella scheda oggetto; database v2 con migrazione automatica; nuova grafica (barra in basso, griglia/lista, tema) |
 | 2026-11-08 | Aggiornamento 1 | Rilevamento per sfondo (più minifigure per foto, nessun limite di 5); modalità di riconoscimento Tutto/Set/Minifigure/Pezzi con endpoint dedicati; scelta del metodo di rilevamento; avviso e scelta per gli oggetti già in catalogo (scansione e ricerca); schema Brickognize verificato |
