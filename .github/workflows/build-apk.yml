@@ -31,6 +31,12 @@ jobs:
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk out/BrickArchivio-${{ github.run_number }}.apk
 
+      - name: Schemi database (per le migrazioni)
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas
+
       - name: Carica come artifact
         uses: actions/upload-artifact@v4
         with:
