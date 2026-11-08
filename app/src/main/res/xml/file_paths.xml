@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Cartella temporanea dove la fotocamera di sistema scrive lo scatto -->
+    <cache-path name="captures" path="captures/" />
+</paths>

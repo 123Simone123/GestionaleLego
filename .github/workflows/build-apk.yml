@@ -1,0 +1,48 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compila APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Rinomina APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/BrickArchivio-${{ github.run_number }}.apk
+
+      - name: Carica come artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrickArchivio-apk
+          path: out/*.apk
+
+      # Pubblica l'APK in una Release: dal telefono basta aprire la pagina
+      # "Releases" del repository e toccare il file .apk per scaricarlo.
+      - name: Pubblica release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Brick Archivio build ${{ github.run_number }}
+          body: APK compilato automaticamente dal commit ${{ github.sha }}.
+          files: out/*.apk
