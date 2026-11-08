@@ -10,7 +10,13 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_REBRICKABLE, null)
         set(value) = prefs.edit().putString(KEY_REBRICKABLE, value?.trim()).apply()
 
+    /** Catalogo mostrato a griglia (true) o a lista (false). */
+    var catalogGrid: Boolean
+        get() = prefs.getBoolean(KEY_GRID, true)
+        set(value) = prefs.edit().putBoolean(KEY_GRID, value).apply()
+
     private companion object {
+        const val KEY_GRID = "catalog_grid"
         const val KEY_REBRICKABLE = "rebrickable_api_key"
     }
 }

@@ -50,7 +50,7 @@ import kotlin.system.exitProcess
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen() {
     val context = LocalContext.current
     val app = context.app
     val scope = rememberCoroutineScope()
@@ -77,20 +77,16 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Impostazioni") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Indietro") }
-                }
-            )
+            TopAppBar(title = { Text("Impostazioni") })
         },
-        snackbarHost = { SnackbarHost(snackbar) }
+        snackbarHost = { SnackbarHost(snackbar) },
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)
     ) { padding ->
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Chiave API Rebrickable", style = MaterialTheme.typography.titleMedium)
+            com.brickarchivio.app.ui.SectionTitle("Chiave API Rebrickable")
             Text(
                 "Serve per nome, anno, tema, numero di pezzi e immagine ufficiale dei set. " +
                     "È gratuita: crea un account su rebrickable.com, poi Account → Settings → API.",
@@ -119,9 +115,9 @@ fun SettingsScreen(onBack: () -> Unit) {
             TextButton(onClick = { openUrl(context, "https://rebrickable.com/api/") }) { Text("Apri rebrickable.com/api") }
 
             HorizontalDivider()
-            Text("Backup", style = MaterialTheme.typography.titleMedium)
+            com.brickarchivio.app.ui.SectionTitle("Backup")
             Text(
-                "Tutti i dati e le foto sono solo su questo telefono. Se disinstalli l'app vengono cancellati: " +
+                "Il backup comprende catalogo, foto, contenitori ed esposizioni. Tutti i dati sono solo su questo telefono. Se disinstalli l'app vengono cancellati: " +
                     "fai ogni tanto un backup (un file .zip) e conservalo, ad esempio su Drive o sul PC.",
                 style = MaterialTheme.typography.bodySmall
             )
@@ -135,7 +131,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
 
             HorizontalDivider()
-            Text("Informazioni", style = MaterialTheme.typography.titleMedium)
+            com.brickarchivio.app.ui.SectionTitle("Informazioni")
             Text(
                 "Versione ${BuildConfigInfo.versionName(context)}\n" +
                     "Riconoscimento: Brickognize (brickognize.com) e ML Kit sul telefono.\n" +

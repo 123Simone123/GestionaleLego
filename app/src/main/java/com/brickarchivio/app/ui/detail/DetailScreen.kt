@@ -71,7 +71,16 @@ import coil.compose.AsyncImage
 import com.brickarchivio.app.BrickApp
 import com.brickarchivio.app.domain.LegoItem
 import com.brickarchivio.app.domain.UserPhoto
+import com.brickarchivio.app.R
+import com.brickarchivio.app.ui.AppIcon
+import com.brickarchivio.app.ui.SectionTitle
 import com.brickarchivio.app.ui.Thumb
+import com.brickarchivio.app.ui.app
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color
 import com.brickarchivio.app.ui.formatPrice
 import com.brickarchivio.app.ui.imageModel
 import com.brickarchivio.app.ui.openUrl
@@ -114,13 +123,18 @@ private val itDate = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun DetailScreen(onBack: () -> Unit, vm: DetailViewModel = viewModel()) {
+fun DetailScreen(onBack: () -> Unit, onOpenContainer: (Long) -> Unit, vm: DetailViewModel = viewModel()) {
     val item by vm.item.collectAsState()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf(false) }
     var viewer by remember { mutableStateOf<UserPhoto?>(null) }
+
+    val inventory = context.app.inventory
+    val locations by remember(vm.itemId) { inventory.observeLocations(vm.itemId) }.collectAsState(initial = emptyList())
+    val containers by remember { inventory.observeContainers() }.collectAsState(initial = emptyList())
+    var addToContainer by remember { mutableStateOf(false) }
 
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.addPhoto(uri)
@@ -151,23 +165,45 @@ fun DetailScreen(onBack: () -> Unit, vm: DetailViewModel = viewModel()) {
             // Immagine ufficiale
             val official = imageModel(it.officialImage.localPath, it.officialImage.url)
             if (official != null) {
-                AsyncImage(
-                    model = official,
-                    contentDescription = it.name,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().height(240.dp)
-                )
+                Surface(shape = MaterialTheme.shapes.large, color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                    AsyncImage(
+                        model = official,
+                        contentDescription = it.name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth().height(260.dp).padding(12.dp)
+                    )
+                }
             }
             Text(it.name, style = MaterialTheme.typography.headlineSmall)
-            OfficialInfo(it)
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Box(Modifier.fillMaxWidth().padding(14.dp)) { OfficialInfo(it) }
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 it.links.rebrickable?.let { url -> OutlinedButton(onClick = { openUrl(context, url) }) { Text("Rebrickable") } }
                 it.links.bricklink?.let { url -> OutlinedButton(onClick = { openUrl(context, url) }) { Text("BrickLink") } }
             }
 
-            HorizontalDivider()
-            Text("Le tue foto", style = MaterialTheme.typography.titleMedium)
+            SectionTitle("Dove si trova")
+            if (locations.isEmpty()) {
+                Text("Non è in nessun contenitore.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            locations.forEach { loc ->
+                Card(
+                    Modifier.fillMaxWidth().clickable { onOpenContainer(loc.containerId) },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AppIcon(R.drawable.ic_box, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Spacer(Modifier.width(10.dp))
+                        Text(loc.containerName, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text("×${loc.quantity}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+            }
+            OutlinedButton(onClick = { addToContainer = true }) { Text("Metti in un contenitore") }
+
+            SectionTitle("Le tue foto")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(it.photos, key = { p -> p.id }) { p ->
                     Thumb(File(p.path), 96.dp, Modifier.clickable { viewer = p })
@@ -179,11 +215,9 @@ fun DetailScreen(onBack: () -> Unit, vm: DetailViewModel = viewModel()) {
                 }
             }
 
-            HorizontalDivider()
             PersonalEditor(it, vm) { scope.launch { snackbar.showSnackbar("Salvato") } }
 
-            HorizontalDivider()
-            Text("Tag", style = MaterialTheme.typography.titleMedium)
+            SectionTitle("Tag")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 it.personal.tags.forEach { tag ->
                     InputChip(
@@ -206,6 +240,40 @@ fun DetailScreen(onBack: () -> Unit, vm: DetailViewModel = viewModel()) {
             }
             Spacer(Modifier.height(40.dp))
         }
+    }
+
+    if (addToContainer) {
+        val current = item
+        AlertDialog(
+            onDismissRequest = { addToContainer = false },
+            title = { Text("Metti in un contenitore") },
+            text = {
+                if (containers.isEmpty()) {
+                    Text("Non hai ancora contenitori: creali nella scheda «Contenitori».")
+                } else {
+                    Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                        containers.forEach { c ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    addToContainer = false
+                                    if (current != null) scope.launch {
+                                        inventory.addCatalogItem(c.id, current, 1)
+                                        snackbar.showSnackbar("Aggiunto a ${c.name}")
+                                    }
+                                }.padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AppIcon(R.drawable.ic_box, null)
+                                Spacer(Modifier.width(10.dp))
+                                Text(c.name, modifier = Modifier.weight(1f))
+                                Text("${c.entries.size} righe", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { addToContainer = false }) { Text("Chiudi") } }
+        )
     }
 
     if (confirmDelete) {
@@ -273,7 +341,7 @@ private fun PersonalEditor(item: LegoItem, vm: DetailViewModel, onSaved: () -> U
     // la quantità può cambiare da fuori (riscansione): la riallineo
     LaunchedEffect(p.quantity) { quantity = p.quantity.toString() }
 
-    Text("Dati personali", style = MaterialTheme.typography.titleMedium)
+    SectionTitle("Dati personali")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = quantity, onValueChange = { v -> quantity = v.filter(Char::isDigit) },
