@@ -2,6 +2,7 @@ package com.brickarchivio.app
 
 import android.app.Application
 import com.brickarchivio.app.data.CatalogRepository
+import com.brickarchivio.app.data.InventoryRepository
 import com.brickarchivio.app.data.PhotoStorage
 import com.brickarchivio.app.data.Settings
 import com.brickarchivio.app.data.db.AppDatabase
@@ -24,6 +25,8 @@ class BrickApp : Application() {
         private set
     lateinit var recognizer: Recognizer
         private set
+    lateinit var inventory: InventoryRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -33,5 +36,6 @@ class BrickApp : Application() {
         rebrickable = RebrickableClient { settings.rebrickableKey }
         repository = CatalogRepository(database.catalogDao(), storage, rebrickable)
         recognizer = Recognizer(storage, BrickognizeClient(), rebrickable)
+        inventory = InventoryRepository(database.inventoryDao())
     }
 }
