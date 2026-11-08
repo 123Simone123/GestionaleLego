@@ -1,0 +1,33 @@
+name: API check
+
+# Workflow di diagnostica: scarica la specifica di Brickognize e prova una chiamata.
+on:
+  workflow_dispatch:
+  push:
+    paths: [ '.github/workflows/api-check.yml' ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Specifica OpenAPI Brickognize
+        run: |
+          curl -sS -m 30 https://api.brickognize.com/openapi.json -o openapi.json || true
+          python3 - <<'EOF'
+          import json
+          spec = json.load(open('openapi.json'))
+          for path, ops in spec.get('paths', {}).items():
+              for method, op in ops.items():
+                  print(method.upper(), path, '-', op.get('summary', ''))
+          print('\n=== SCHEMAS ===')
+          for name, s in spec.get('components', {}).get('schemas', {}).items():
+              props = s.get('properties', {})
+              print(name, ':', {k: v.get('type', v.get('$ref', v.get('anyOf', ''))) for k, v in props.items()})
+          EOF
+      - name: Prova predict con immagine di test
+        run: |
+          python3 -c "
+          from PIL import Image, ImageDraw
+          im=Image.new('RGB',(400,300),'white');d=ImageDraw.Draw(im)
+          d.rectangle([50,100,150,200],fill='red');d.rectangle([250,100,350,200],fill='blue');im.save('t.jpg')" || pip install pillow
+          curl -sS -m 60 -X POST https://api.brickognize.com/predict/ -F "query_image=@t.jpg;type=image/jpeg" | head -c 3000
