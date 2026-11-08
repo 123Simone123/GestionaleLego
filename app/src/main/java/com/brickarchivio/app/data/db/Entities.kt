@@ -99,3 +99,15 @@ data class ItemWithDetails(
     )
     val tags: List<TagEntity>
 )
+
+/** Riepilogo leggero di ciò che è già in catalogo (per segnalare i doppioni). */
+data class OwnedItem(
+    val id: Long,
+    val type: String,
+    val code: String,
+    val name: String,
+    val quantity: Int
+)
+
+/** Chiave "TIPO|codice" (funzione esterna: Room non deve vederla come colonna). */
+fun OwnedItem.key(): String = "$type|$code"

@@ -57,7 +57,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
+import com.brickarchivio.app.data.db.OwnedItem
+import com.brickarchivio.app.data.remote.BrickognizeClient
 import com.brickarchivio.app.data.remote.Candidate
+import com.brickarchivio.app.recognition.Recognizer
 import com.brickarchivio.app.domain.ItemType
 import com.brickarchivio.app.ui.Thumb
 import com.brickarchivio.app.ui.search.ManualSearchPanel
@@ -138,6 +144,16 @@ private fun PickStep(state: ScanState, vm: ScanViewModel) {
             "Consiglio: sfondo uniforme, oggetti separati tra loro, numero della scatola ben visibile.",
             style = MaterialTheme.typography.bodySmall
         )
+        Text("Cosa fotografi?", style = MaterialTheme.typography.titleSmall)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            BrickognizeClient.Mode.entries.forEach { m ->
+                FilterChip(selected = state.mode == m, onClick = { vm.setMode(m) }, label = { Text(m.label) })
+            }
+        }
+        Text(
+            "Scegliere «Minifigure», «Set» o «Pezzi» usa un riconoscitore specifico, più preciso di «Tutto».",
+            style = MaterialTheme.typography.bodySmall
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { takePicture.launch(vm.newCaptureUri()) }, modifier = Modifier.weight(1f)) {
                 Text("Scatta foto")
@@ -180,6 +196,25 @@ private fun EditStep(state: ScanState, vm: ScanViewModel) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Rilevamento:", style = MaterialTheme.typography.labelMedium)
+            Recognizer.DetectMethod.entries.forEach { m ->
+                FilterChip(
+                    selected = state.detectMethod == m,
+                    onClick = { vm.setDetectMethod(m) },
+                    label = {
+                        Text(
+                            if (m == Recognizer.DetectMethod.AUTO && state.detectMethod == m && state.detectUsed != null)
+                                "Automatico (${state.detectUsed.label})" else m.label
+                        )
+                    }
+                )
+            }
+        }
         Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
             RegionEditor(
                 image = image,
@@ -220,7 +255,7 @@ private fun ReviewStep(state: ScanState, vm: ScanViewModel) {
         ) {
             items(state.results, key = { it.regionId }) { r ->
                 val number = state.regions.indexOfFirst { it.id == r.regionId } + 1
-                ResultCard(number, r, onChoose = { vm.choose(r.regionId, it) }, onManual = { searchFor = r.regionId })
+                ResultCard(number, r, state.owned, onChoose = { vm.choose(r.regionId, it) }, onManual = { searchFor = r.regionId })
             }
         }
         val count = state.results.count { it.selected in it.candidates.indices }
@@ -232,6 +267,8 @@ private fun ReviewStep(state: ScanState, vm: ScanViewModel) {
             }
         }
     }
+
+    state.duplicates?.let { dups -> DuplicatesDialog(dups, vm) }
 
     searchFor?.let { regionId ->
         AlertDialog(
@@ -250,7 +287,7 @@ private fun ReviewStep(state: ScanState, vm: ScanViewModel) {
 }
 
 @Composable
-private fun ResultCard(number: Int, r: ResultUi, onChoose: (Int) -> Unit, onManual: () -> Unit) {
+private fun ResultCard(number: Int, r: ResultUi, owned: Map<String, OwnedItem>, onChoose: (Int) -> Unit, onManual: () -> Unit) {
     var showTech by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp)) {
@@ -267,7 +304,7 @@ private fun ResultCard(number: Int, r: ResultUi, onChoose: (Int) -> Unit, onManu
                     }
                 }
             }
-            r.candidates.forEachIndexed { i, c -> CandidateRow(c, selected = r.selected == i, onClick = { onChoose(i) }) }
+            r.candidates.forEachIndexed { i, c -> CandidateRow(c, owned[c.key()], selected = r.selected == i, onClick = { onChoose(i) }) }
             Row(
                 Modifier.fillMaxWidth().clickable { onChoose(-1) },
                 verticalAlignment = Alignment.CenterVertically
@@ -297,7 +334,7 @@ private fun ResultCard(number: Int, r: ResultUi, onChoose: (Int) -> Unit, onManu
 }
 
 @Composable
-private fun CandidateRow(c: Candidate, selected: Boolean, onClick: () -> Unit) {
+private fun CandidateRow(c: Candidate, owned: OwnedItem?, selected: Boolean, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -317,6 +354,13 @@ private fun CandidateRow(c: Candidate, selected: Boolean, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = if (c.type == ItemType.SET) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
             )
+            if (owned != null) {
+                Text(
+                    "Già in catalogo (×${owned.quantity})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }
@@ -350,4 +394,43 @@ private fun DoneStep(state: ScanState, onOpenItem: (Long) -> Unit, onRestart: ()
             Button(onClick = onBack, modifier = Modifier.weight(1f)) { Text("Catalogo") }
         }
     }
+}
+
+@Composable
+private fun DuplicatesDialog(dups: List<DuplicateUi>, vm: ScanViewModel) {
+    AlertDialog(
+        onDismissRequest = vm::cancelDuplicates,
+        title = { Text("Già presenti") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Per ognuno scegli se aggiungerlo comunque (la quantità aumenta di 1) o saltarlo.")
+                dups.forEach { d ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(d.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                listOfNotNull(
+                                    d.code,
+                                    if (d.ownedQuantity > 0) "in catalogo ×${d.ownedQuantity}" else null,
+                                    if (d.repeatedInPhoto) "ripetuto in questa foto" else null
+                                ).joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                if (d.add) "Aggiungi (quantità +1)" else "Salta",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (d.add) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Switch(checked = d.add, onCheckedChange = { vm.setDuplicateChoice(d.regionId, it) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = vm::confirmDuplicates) { Text("Continua") } },
+        dismissButton = { TextButton(onClick = vm::cancelDuplicates) { Text("Annulla") } }
+    )
 }

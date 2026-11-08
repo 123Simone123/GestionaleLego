@@ -13,7 +13,9 @@ import com.google.mlkit.vision.objects.ObjectDetection
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -41,7 +43,26 @@ class Recognizer(
         val errors: List<String>
     )
 
-    suspend fun detectObjects(bitmap: Bitmap): List<NormRect> {
+    enum class DetectMethod(val label: String) { AUTO("Automatico"), BACKGROUND("Sfondo"), MLKIT("ML Kit") }
+
+    data class Detection(val rects: List<NormRect>, val methodUsed: DetectMethod)
+
+    /**
+     * AUTO: prova il rilevamento per sfondo (nessun limite al numero di oggetti, ottimo per
+     * minifigure su superficie uniforme); se lo sfondo non è uniforme usa ML Kit.
+     */
+    suspend fun detect(bitmap: Bitmap, method: DetectMethod): Detection {
+        if (method != DetectMethod.MLKIT) {
+            val bg = withContext(Dispatchers.Default) { BackgroundSegmenter.detect(bitmap) }
+            if (bg != null && (bg.isNotEmpty() || method == DetectMethod.BACKGROUND)) {
+                return Detection(bg, DetectMethod.BACKGROUND)
+            }
+            if (method == DetectMethod.BACKGROUND) return Detection(emptyList(), DetectMethod.BACKGROUND)
+        }
+        return Detection(detectObjects(bitmap), DetectMethod.MLKIT)
+    }
+
+    private suspend fun detectObjects(bitmap: Bitmap): List<NormRect> {
         val options = ObjectDetectorOptions.Builder()
             .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
             .enableMultipleObjects()
@@ -52,8 +73,8 @@ class Recognizer(
             objects.map {
                 val b = it.boundingBox
                 // piccolo margine attorno all'oggetto
-                val padX = b.width() * 0.05f
-                val padY = b.height() * 0.05f
+                val padX = b.width() * 0.10f
+                val padY = b.height() * 0.10f
                 NormRect(
                     (b.left - padX) / bitmap.width,
                     (b.top - padY) / bitmap.height,
@@ -68,11 +89,12 @@ class Recognizer(
         }
     }
 
-    suspend fun recognize(crop: Bitmap): RegionRecognition {
+    suspend fun recognize(crop: Bitmap, mode: BrickognizeClient.Mode): RegionRecognition {
         val errors = mutableListOf<String>()
+        val lookForSets = mode == BrickognizeClient.Mode.ALL || mode == BrickognizeClient.Mode.SETS
 
         // a. numeri letti offline (scatole)
-        val numbers = try {
+        val numbers: List<String> = if (!lookForSets) emptyList() else try {
             readSetNumbers(crop)
         } catch (e: Exception) {
             errors += "Lettura testo: ${e.message}"
@@ -82,7 +104,7 @@ class Recognizer(
         // b. Brickognize
         var raw: String? = null
         val visual = try {
-            val result = brickognize.predict(storage.toUploadJpeg(crop))
+            val result = brickognize.predict(storage.toUploadJpeg(crop), mode)
             raw = result.raw
             result.candidates
         } catch (e: Exception) {

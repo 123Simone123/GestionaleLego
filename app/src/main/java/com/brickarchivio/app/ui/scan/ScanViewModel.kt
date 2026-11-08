@@ -7,7 +7,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.brickarchivio.app.BrickApp
 import com.brickarchivio.app.data.NormRect
+import com.brickarchivio.app.data.db.OwnedItem
+import com.brickarchivio.app.data.remote.BrickognizeClient
 import com.brickarchivio.app.data.remote.Candidate
+import com.brickarchivio.app.recognition.Recognizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +33,22 @@ data class ResultUi(
     val errors: List<String>
 )
 
+/** Chiave per riconoscere i doppioni: "TIPO|codice". */
+fun Candidate.key(): String = "${type.name}|$code"
+
+/** Oggetto scelto che è già in catalogo (o ripetuto nella stessa foto): l'utente decide. */
+data class DuplicateUi(
+    val regionId: Int,
+    val name: String,
+    val code: String,
+    /** quantità già in catalogo (0 se non c'è) */
+    val ownedQuantity: Int,
+    /** stesso oggetto già scelto in un altro riquadro di questa foto */
+    val repeatedInPhoto: Boolean,
+    /** true = aggiungi comunque (quantità +1), false = salta */
+    val add: Boolean = false
+)
+
 data class SavedUi(val itemId: Long, val name: String, val created: Boolean, val warning: String?)
 
 data class ScanState(
@@ -42,7 +61,15 @@ data class ScanState(
     val selectedRegion: Int? = null,
     val results: List<ResultUi> = emptyList(),
     val saved: List<SavedUi> = emptyList(),
-    val message: String? = null
+    val message: String? = null,
+    val mode: BrickognizeClient.Mode = BrickognizeClient.Mode.ALL,
+    val detectMethod: Recognizer.DetectMethod = Recognizer.DetectMethod.AUTO,
+    /** metodo effettivamente usato per i riquadri proposti */
+    val detectUsed: Recognizer.DetectMethod? = null,
+    /** già in catalogo, per "TIPO|codice" */
+    val owned: Map<String, OwnedItem> = emptyMap(),
+    /** non null = dialogo doppioni aperto */
+    val duplicates: List<DuplicateUi>? = null
 )
 
 /**
@@ -117,14 +144,37 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             nextPhoto()
             return@launch
         }
-        val rects = recognizer.detectObjects(bitmap).ifEmpty { listOf(NormRect.FULL) }
+        val detection = recognizer.detect(bitmap, _state.value.detectMethod)
         _state.update {
             it.copy(
                 step = ScanStep.EDIT_REGIONS,
                 bitmap = bitmap,
-                regions = rects.map { r -> RegionUi(nextRegionId++, r) },
-                selectedRegion = null
+                regions = detection.rects.ifEmpty { listOf(NormRect.FULL) }.map { r -> RegionUi(nextRegionId++, r) },
+                selectedRegion = null,
+                detectUsed = detection.methodUsed
             )
+        }
+    }
+
+    fun setMode(mode: BrickognizeClient.Mode) = _state.update { it.copy(mode = mode) }
+
+    /** Cambia metodo di rilevamento e, se una foto è aperta, ricalcola i riquadri. */
+    fun setDetectMethod(method: Recognizer.DetectMethod) {
+        _state.update { it.copy(detectMethod = method) }
+        val bitmap = _state.value.bitmap ?: return
+        if (_state.value.step != ScanStep.EDIT_REGIONS) return
+        viewModelScope.launch {
+            _state.update { it.copy(step = ScanStep.BUSY, busyMessage = "Cerco gli oggetti nella foto…") }
+            val detection = recognizer.detect(bitmap, method)
+            _state.update {
+                it.copy(
+                    step = ScanStep.EDIT_REGIONS,
+                    regions = detection.rects.ifEmpty { listOf(NormRect.FULL) }.map { r -> RegionUi(nextRegionId++, r) },
+                    selectedRegion = null,
+                    detectUsed = detection.methodUsed,
+                    message = if (detection.rects.isEmpty()) "Nessun oggetto trovato con questo metodo" else null
+                )
+            }
         }
     }
 
@@ -161,7 +211,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             val cropPath = storage.saveCrop(bitmap, region.rect)
             pendingFiles += cropPath
             val crop = withContext(Dispatchers.Default) { storage.crop(bitmap, region.rect) }
-            val rec = recognizer.recognize(crop)
+            val rec = recognizer.recognize(crop, s.mode)
             if (crop !== bitmap) crop.recycle()
             results += ResultUi(
                 regionId = region.id,
@@ -173,7 +223,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 errors = rec.errors
             )
         }
-        _state.update { it.copy(step = ScanStep.REVIEW, results = results) }
+        val owned = runCatching { repo.owned() }.getOrDefault(emptyMap())
+        _state.update { it.copy(step = ScanStep.REVIEW, results = results, owned = owned) }
     }
 
     fun choose(regionId: Int, index: Int) = _state.update { s ->
@@ -192,10 +243,40 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(step = ScanStep.EDIT_REGIONS, results = emptyList()) }
     }
 
-    fun saveCurrent() = viewModelScope.launch {
+    /** Prima del salvataggio controlla i doppioni: se ce ne sono apre il dialogo. */
+    fun saveCurrent() {
+        val s = _state.value
+        val chosen = s.results.filter { it.selected in it.candidates.indices }
+        val seen = mutableSetOf<String>()
+        val duplicates = chosen.mapNotNull { r ->
+            val c = r.candidates[r.selected]
+            val key = c.key()
+            val owned = s.owned[key]
+            val repeated = !seen.add(key)
+            if (owned != null || repeated) {
+                DuplicateUi(r.regionId, c.name, c.code, owned?.quantity ?: 0, repeated)
+            } else null
+        }
+        if (duplicates.isEmpty()) performSave(emptySet())
+        else _state.update { it.copy(duplicates = duplicates) }
+    }
+
+    fun setDuplicateChoice(regionId: Int, add: Boolean) = _state.update { s ->
+        s.copy(duplicates = s.duplicates?.map { if (it.regionId == regionId) it.copy(add = add) else it })
+    }
+
+    fun confirmDuplicates() {
+        val skip = _state.value.duplicates.orEmpty().filterNot { it.add }.map { it.regionId }.toSet()
+        _state.update { it.copy(duplicates = null) }
+        performSave(skip)
+    }
+
+    fun cancelDuplicates() = _state.update { it.copy(duplicates = null) }
+
+    private fun performSave(skipRegions: Set<Int>) = viewModelScope.launch {
         val s = _state.value
         val source = s.queue[s.index]
-        val chosen = s.results.filter { it.selected in it.candidates.indices }
+        val chosen = s.results.filter { it.selected in it.candidates.indices && it.regionId !in skipRegions }
         val saved = mutableListOf<SavedUi>()
         chosen.forEachIndexed { i, r ->
             _state.update { it.copy(step = ScanStep.BUSY, busyMessage = "Salvo ${i + 1} di ${chosen.size} nel catalogo…") }
@@ -232,7 +313,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restart() {
-        _state.value = ScanState()
+        val old = _state.value
+        _state.value = ScanState(mode = old.mode, detectMethod = old.detectMethod)
     }
 
     fun consumeMessage() = _state.update { it.copy(message = null) }

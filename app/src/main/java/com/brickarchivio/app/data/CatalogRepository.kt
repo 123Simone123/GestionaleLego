@@ -4,6 +4,8 @@ import android.net.Uri
 import com.brickarchivio.app.data.db.CatalogDao
 import com.brickarchivio.app.data.db.ItemEntity
 import com.brickarchivio.app.data.db.ItemTagCrossRef
+import com.brickarchivio.app.data.db.OwnedItem
+import com.brickarchivio.app.data.db.key
 import com.brickarchivio.app.data.db.PhotoEntity
 import com.brickarchivio.app.data.db.TagEntity
 import com.brickarchivio.app.data.remote.Candidate
@@ -30,6 +32,9 @@ class CatalogRepository(
     fun observeItem(id: Long): Flow<LegoItem?> = dao.observeItem(id).map { it?.toDomain() }
 
     fun observeTagNames(): Flow<List<String>> = dao.observeTags().map { tags -> tags.map { it.name } }
+
+    /** Oggetti già in catalogo, indicizzati per "TIPO|codice". */
+    suspend fun owned(): Map<String, OwnedItem> = dao.ownedSummary().associateBy { it.key() }
 
     data class AddResult(val itemId: Long, val created: Boolean, val warning: String?)
 

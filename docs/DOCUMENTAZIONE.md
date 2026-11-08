@@ -32,6 +32,7 @@ Domande poste durante l'analisi e risposte ricevute (8 novembre 2026):
 | Dati personali da salvare? | Prezzi (prezzo pagato, data e luogo d'acquisto) e Note + tag |
 | Più oggetti in una foto? | Rilevamento automatico più correzione manuale dei riquadri |
 | Si possono inviare i ritagli delle foto a Brickognize? | Sì. Le foto restano comunque salvate solo nell'app |
+| *(Aggiornamento 1)* Cosa fare se un oggetto è già in catalogo? | Chiedere ogni volta: aggiungere (quantità +1) o saltare |
 
 Non richiesti, quindi **non** implementati: stato/completezza del set, posizione fisica,
 valore di mercato.
@@ -46,7 +47,7 @@ valore di mercato.
 | Database | Room (SQLite) | Relazioni oggetto-foto-tag, query, migrazioni |
 | Rete | OkHttp + `org.json` | Poche dipendenze; parsing tollerante |
 | Immagini | Coil | Mostra sia file locali sia URL |
-| Rilevamento oggetti | ML Kit Object Detection (modello incluso) | Offline, fino a 5 oggetti per foto |
+| Rilevamento oggetti | Rilevamento per sfondo (codice proprio) + ML Kit Object Detection | Offline; il primo non ha limiti di numero, ML Kit arriva a 5 |
 | Lettura numeri | ML Kit Text Recognition (modello incluso) | Offline: legge il numero del set dalla scatola |
 | Riconoscimento visivo | Brickognize API | Gratuita, senza chiave, riconosce set, minifigure e pezzi |
 | Dati ufficiali | Rebrickable API v3 | Database completo di set, temi, pezzi |
@@ -158,15 +159,24 @@ e, se nessun altro oggetto la usa, la foto intera.
 ### 5.1 Brickognize (riconoscimento)
 
 - Sito: https://brickognize.com. Gratuito, senza chiave.
-- Chiamata usata: `POST https://api.brickognize.com/predict/`, multipart, campo
-  `query_image` con il JPEG. **Verificato** (esempio pubblicato dall'autore del servizio).
+- Endpoint, tutti `POST` multipart con campo `query_image` (JPEG). **Verificati** sulla
+  specifica OpenAPI ufficiale (`api.brickognize.com/openapi.json`, 8/11/2026):
+
+| Endpoint | Modalità nell'app |
+|----------|-------------------|
+| `/predict/` | Tutto |
+| `/predict/sets/` | Set |
+| `/predict/figs/` | Minifigure |
+| `/predict/parts/` | Pezzi |
+
+- Risposta (`LegacySearchResultsSchema`), **verificata**: `listing_id`, `bounding_box`
+  (`left, upper, right, lower, image_width, image_height, score`) e `items[]` con
+  `id, name, img_url, external_sites[] (name, url), category, type, score`.
+- **Un solo oggetto per chiamata**: la risposta ha un unico `bounding_box`. Inviando una foto
+  con più oggetti, Brickognize ne riconosce uno solo (il principale). Per questo l'app divide
+  prima la foto in riquadri e invia un ritaglio per oggetto.
 - Viene inviato **solo il ritaglio** dell'oggetto, ridotto a 1024 px.
-- Campi letti dalla risposta: `items[]` con `id`, `name`, `img_url`, `category`, `type`,
-  `score`, `external_sites[]` (`name`, `url`).
-  ⚠ **Da verificare al primo test**: durante la progettazione la documentazione ufficiale
-  (`api.brickognize.com/docs`) non era raggiungibile, quindi questi nomi non sono confermati.
-  Il parsing è tollerante (un campo mancante non blocca nulla) e nella schermata di conferma
-  il pulsante **"Dettagli tecnici"** mostra la risposta grezza, per correggere il codice se serve.
+- Il pulsante **"Dettagli tecnici"** nella schermata di conferma mostra la risposta grezza.
 - Per i set, un codice senza suffisso (es. `75192`) viene convertito in `75192-1` (formato Rebrickable).
 
 ### 5.2 Rebrickable (dati ufficiali)
@@ -210,22 +220,48 @@ e, se nessun altro oggetto la usa, la foto intera.
           ▼
 per ogni foto:
   1. Copia nell'app (raddrizzata, max 2048 px)
-  2. ML Kit Object Detection → riquadri proposti (max 5; se nessuno: foto intera)
-  3. Tu correggi i riquadri: sposta, ridimensiona, aggiungi, elimina
+  2. Rilevamento dei riquadri (vedi 6.1); se non trova nulla: foto intera
+  3. Tu correggi i riquadri: sposta, ridimensiona, aggiungi, elimina, cambi metodo
   4. Per ogni riquadro:
        a. salva il ritaglio
-       b. ML Kit legge i numeri di 4-7 cifre (offline), ordinati per grandezza del testo
-       c. invio del ritaglio a Brickognize
-       d. i numeri letti (max 3) vengono verificati su Rebrickable come set
+       b. (modalità Tutto o Set) ML Kit legge i numeri di 4-7 cifre (offline)
+       c. invio del ritaglio a Brickognize, all'endpoint della modalità scelta
+       d. (modalità Tutto o Set) i numeri letti (max 3) vengono verificati su Rebrickable
        e. unione dei risultati: prima i numeri trovati sulla scatola, poi Brickognize
   5. Schermata di conferma: per ogni oggetto scegli il risultato giusto,
-     "Non aggiungere" o "Cerca a mano…"
+     "Non aggiungere" o "Cerca a mano…". I risultati già in catalogo sono
+     segnati "Già in catalogo (×N)".
+  5b. Se un oggetto scelto è già in catalogo, o compare due volte nella stessa
+     foto, si apre il dialogo "Già presenti": per ognuno scegli Aggiungi
+     (quantità +1) o Salta.
   6. Salvataggio: dati completati da Rebrickable, immagine ufficiale scaricata,
      ritaglio collegato all'oggetto (o quantità +1 se già presente)
           │
           ▼
 [Riepilogo] → apri un oggetto o fai una nuova scansione
 ```
+
+### 6.1 Rilevamento dei riquadri
+
+Nella schermata dei riquadri puoi scegliere il metodo:
+
+| Metodo | Come funziona | Quando usarlo |
+|--------|---------------|---------------|
+| **Automatico** (predefinito) | Prova "Sfondo"; se lo sfondo non è uniforme usa "ML Kit" | Sempre, come primo tentativo |
+| **Sfondo** | Stima il colore dello sfondo dal bordo della foto e separa ciò che ne differisce (componenti connesse). Nessun limite al numero di oggetti | Più minifigure o pezzi su un foglio o tavolo uniforme |
+| **ML Kit** | Modello di Google sul telefono, massimo 5 oggetti | Sfondi variegati, scatole |
+
+Dettagli del metodo "Sfondo" (`recognition/BackgroundSegmenter.kt`): la foto viene ridotta
+a 320 px; il colore di sfondo è la mediana della cornice di 4 px; se la cornice è troppo
+varia il metodo rinuncia. La luminosità conta meno della tinta, per ridurre l'effetto delle
+ombre. La maschera viene dilatata per tenere unite le parti di una stessa minifigure; le aree
+più piccole dello 0,2% della foto vengono scartate. Si tengono al massimo 30 oggetti.
+
+### 6.2 Modalità di riconoscimento
+
+Prima di scattare scegli **cosa fotografi**: Tutto, Set, Minifigure o Pezzi. Le modalità
+specifiche usano l'endpoint dedicato di Brickognize, che confronta solo con quel tipo di
+oggetto ed è quindi più preciso. Per una foto con sole minifigure scegli **Minifigure**.
 
 Se abbandoni la scansione a metà, le foto e i ritagli non salvati vengono cancellati.
 
@@ -240,7 +276,7 @@ della scatola ben visibile e a fuoco.
 |-----------|----------|
 | Catalogo | Elenco con immagine, nome, codice, tema, anno, pezzi, quantità; filtro testuale (nome, codice, tema, note, tag); filtri per tipo e per tag; totale esemplari e totale speso |
 | Scansione | Flusso della sezione 6 |
-| Cerca e aggiungi | Aggiunta senza foto: ricerca per numero o nome su Rebrickable |
+| Cerca e aggiungi | Aggiunta senza foto: ricerca per numero o nome su Rebrickable. Se l'oggetto è già in catalogo chiede: Aumenta quantità / Apri scheda / Annulla |
 | Dettaglio | Immagine ufficiale, dati, link a Rebrickable/BrickLink, le tue foto (aggiungi/elimina), quantità, prezzo, data e luogo d'acquisto, note, tag; aggiorna dati online; elimina |
 | Impostazioni | Chiave Rebrickable (con verifica), esporta/importa backup, informazioni |
 
@@ -288,10 +324,12 @@ I dati esistono solo sul telefono: disinstallare l'app li cancella.
 
 ## 9. Limiti noti e aspetti da verificare
 
-1. **Schema della risposta Brickognize** da confermare al primo test (sez. 5.1).
+1. ~~Schema della risposta Brickognize da confermare~~: verificato (aggiornamento 1).
 2. **Campi Rebrickable per minifigure e pezzi** da confermare (sez. 5.2).
-3. ML Kit rileva al massimo **5 oggetti** per foto; per averne di più si aggiungono riquadri a mano.
-4. Il rilevamento automatico funziona meglio con oggetti ben separati su sfondo uniforme.
+3. Il metodo ML Kit rileva al massimo **5 oggetti**; il metodo "Sfondo" non ha questo limite.
+4. Il metodo "Sfondo" richiede uno sfondo uniforme e oggetti che non si tocchino: oggetti
+   a contatto finiscono nello stesso riquadro (si separano a mano). Oggetti dello stesso
+   colore dello sfondo possono sfuggire.
 5. Il riconoscimento visivo richiede internet; senza rete funziona solo la lettura dei numeri
    (che però ha bisogno di Rebrickable per la verifica, quindi anch'essa di internet).
    Il catalogo invece è sempre consultabile offline.
@@ -307,3 +345,4 @@ I dati esistono solo sul telefono: disinstallare l'app li cancella.
 | Data | Versione | Modifica |
 |------|----------|----------|
 | 2026-11-08 | 1.0 | Prima versione: catalogo, scansione multi-oggetto, ricerca manuale, dettaglio, backup |
+| 2026-11-08 | Aggiornamento 1 | Rilevamento per sfondo (più minifigure per foto, nessun limite di 5); modalità di riconoscimento Tutto/Set/Minifigure/Pezzi con endpoint dedicati; scelta del metodo di rilevamento; avviso e scelta per gli oggetti già in catalogo (scansione e ricerca); schema Brickognize verificato |

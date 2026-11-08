@@ -22,6 +22,9 @@ interface CatalogDao {
     @Query("SELECT * FROM items WHERE type = :type AND code = :code LIMIT 1")
     suspend fun findByCode(type: String, code: String): ItemEntity?
 
+    @Query("SELECT id, type, code, name, quantity FROM items")
+    suspend fun ownedSummary(): List<OwnedItem>
+
     @Query("SELECT * FROM items WHERE id = :id")
     suspend fun getItem(id: Long): ItemEntity?
 

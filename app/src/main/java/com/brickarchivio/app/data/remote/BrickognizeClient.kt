@@ -18,16 +18,25 @@ import java.io.IOException
  * Richiesta (verificata): POST https://api.brickognize.com/predict/
  * multipart con campo "query_image" contenente il JPEG.
  *
- * Risposta: il parsing è volutamente tollerante (campi letti con optString) perché
- * lo schema completo non è stato verificabile durante la progettazione: vedi
- * docs/DOCUMENTAZIONE.md (sezione 5). La risposta grezza viene conservata in [Result.raw] e
- * mostrata nella schermata di revisione ("Dettagli tecnici") per poterla controllare.
+ * Endpoint (verificati dalla specifica OpenAPI ufficiale, 8/11/2026):
+ *   /predict/ (tutto), /predict/sets/, /predict/figs/, /predict/parts/
+ * Risposta (LegacySearchResultsSchema): listing_id, bounding_box (UN solo oggetto
+ * per immagine), items[] con id, name, img_url, external_sites[], category, type, score.
+ * La risposta grezza viene conservata in [Result.raw] e mostrata in "Dettagli tecnici".
  */
 class BrickognizeClient {
 
     data class Result(val candidates: List<Candidate>, val raw: String)
 
-    suspend fun predict(jpeg: ByteArray): Result = withContext(Dispatchers.IO) {
+    /** Cosa cercare: cambia l'endpoint (i riconoscitori specifici sono più precisi). */
+    enum class Mode(val label: String, val path: String) {
+        ALL("Tutto", "/predict/"),
+        SETS("Set", "/predict/sets/"),
+        FIGS("Minifigure", "/predict/figs/"),
+        PARTS("Pezzi", "/predict/parts/")
+    }
+
+    suspend fun predict(jpeg: ByteArray, mode: Mode = Mode.ALL): Result = withContext(Dispatchers.IO) {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart(
@@ -36,7 +45,7 @@ class BrickognizeClient {
             )
             .build()
         val request = Request.Builder()
-            .url("$BASE_URL/predict/")
+            .url(BASE_URL + mode.path)
             .header("Accept", "application/json")
             .header("User-Agent", Http.USER_AGENT)
             .post(body)
