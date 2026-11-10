@@ -36,7 +36,8 @@ object DocxWriter {
         append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
         append("""<w:document xmlns:w="$W"><w:body>""")
         reports.forEachIndexed { i, r ->
-            if (i > 0) { append(emptyParagraph()); append(emptyParagraph()) }
+            // ogni inventario su una pagina nuova
+            if (i > 0) append("""<w:p><w:r><w:br w:type="page"/></w:r></w:p>""")
             append(paragraph(r.title))
             append(table(r))
         }
