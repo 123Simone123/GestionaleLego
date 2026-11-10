@@ -38,4 +38,6 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell am instrument -w -e class com.brickarchivio.app.export.PdfWriterTest com.brickarchivio.app.test/androidx.test.runner.AndroidJUnitRunner
-            echo "=== SAMPLE_PDF"; adb exec-out run-as com.brickarchivio.app cat files/sample-inventario.pdf | base64 -w0; echo
+            adb pull /sdcard/Android/data/com.brickarchivio.app/files/sample-inventario.pdf sample.pdf || adb shell "run-as com.brickarchivio.app cat files/sample-inventario.pdf" > sample.pdf
+            ls -la sample.pdf
+            echo "=== SAMPLE_PDF" && base64 -w0 sample.pdf && echo

@@ -50,5 +50,7 @@ class PdfWriterTest {
         val file = File(ctx.filesDir, "sample-inventario.pdf")
         file.outputStream().use { PdfWriter.write(reports, it) }
         assertTrue(file.length() > 1000)
+        // copia anche nella cartella esterna dell'app, leggibile con adb pull
+        ctx.getExternalFilesDir(null)?.let { dir -> file.copyTo(File(dir, file.name), overwrite = true) }
     }
 }
