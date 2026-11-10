@@ -40,4 +40,4 @@ jobs:
             adb shell am instrument -w -e class com.brickarchivio.app.export.PdfWriterTest com.brickarchivio.app.test/androidx.test.runner.AndroidJUnitRunner
             adb pull /sdcard/Android/data/com.brickarchivio.app/files/sample-inventario.pdf sample.pdf || adb shell "run-as com.brickarchivio.app cat files/sample-inventario.pdf" > sample.pdf
             ls -la sample.pdf
-            echo "=== SAMPLE_PDF" && base64 -w0 sample.pdf && echo
+            echo "=== SAMPLE_PDF" && base64 -w 4000 sample.pdf && echo "=== END_PDF"
