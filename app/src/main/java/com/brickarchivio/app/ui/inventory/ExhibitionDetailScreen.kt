@@ -20,6 +20,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -77,6 +80,8 @@ fun ExhibitionDetailScreen(onBack: () -> Unit, onOpenContainer: (Long) -> Unit, 
     var confirmDelete by remember { mutableStateOf(false) }
     var addingContainers by remember { mutableStateOf(false) }
     var onlyMissing by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
 
     Scaffold(
         topBar = {
@@ -84,11 +89,13 @@ fun ExhibitionDetailScreen(onBack: () -> Unit, onOpenContainer: (Long) -> Unit, 
                 title = { Text(exhibition?.name ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Indietro") } },
                 actions = {
+                    IconButton(onClick = { exporting = true }) { Icon(Icons.Default.Share, "Esporta Word/PDF") }
                     IconButton(onClick = { editing = true }) { Icon(Icons.Default.Edit, "Modifica") }
                     IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Elimina") }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
         val ex = exhibition ?: return@Scaffold
         LazyColumn(
@@ -137,6 +144,9 @@ fun ExhibitionDetailScreen(onBack: () -> Unit, onOpenContainer: (Long) -> Unit, 
     }
 
     val ex = exhibition
+    if (exporting && ex != null) {
+        ExportDialog(ex, onDismiss = { exporting = false }, onResult = { msg -> scope.launch { snackbar.showSnackbar(msg) } })
+    }
     if (editing && ex != null) {
         ExhibitionDialog(
             "Modifica esposizione", ex.name, ex.place.orEmpty(), ex.startDate, ex.endDate, ex.notes,

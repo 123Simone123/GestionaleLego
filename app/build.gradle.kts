@@ -87,4 +87,6 @@ dependencies {
     implementation("com.google.mlkit:object-detection:17.0.2")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.android.gms:play-services-tasks:18.2.0")
+
+    testImplementation("junit:junit:4.13.2")
 }
