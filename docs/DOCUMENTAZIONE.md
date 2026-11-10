@@ -22,6 +22,7 @@ Requisiti espressi dall'utente:
 | R9 | *(Agg. 2)* Inventario per le esposizioni: contenitori e loro contenuto (dal catalogo o scritto a mano) | Contenitori con righe e quantità (sez. 4.3, 7.1) |
 | R10 | *(Agg. 2)* Colonne andata e ritorno per verificare che torni tutto | Esposizioni con checklist per evento (sez. 7.2) |
 | R11 | *(Agg. 2)* Migliorare la grafica | Barra in basso, catalogo a griglia/lista, nuovo tema (sez. 7.3) |
+| R12 | *(Agg. 3)* Esportare l'inventario in Word o PDF con il layout del file INVENTARIO.docx | Esportazione dall'esposizione (sez. 7.4) |
 
 ### 1.1 Decisioni prese con l'utente
 
@@ -349,6 +350,39 @@ della scatola ben visibile e a fuoco.
 Stato mostrato nell'elenco delle esposizioni: *Nessun contenitore*, *Preparazione x/y*
 (andata incompleta), *In esposizione*, *N mancanti al ritorno*, *Tutto tornato ✓*.
 
+### 7.4 Esportazione inventario (Word / PDF)
+
+Dalla scheda di un'esposizione, icona **Condividi** in alto → dialogo "Esporta inventario":
+
+- **Formato**: PDF (pronto da stampare) oppure Word `.docx` (modificabile).
+- **Colonne Andata e Ritorno**: *vuote, da spuntare a mano* (come il modello cartaceo) oppure
+  *con le spunte dell'app*: ✓ se tutte le righe del contenitore sono spuntate, altrimenti `x/y`.
+- **Condividi** apre il menu di Android (WhatsApp, email, Drive, stampa…); **Salva** chiede dove
+  salvare il file sul telefono.
+
+Layout, ricavato dal file `INVENTARIO.docx` fornito dall'utente:
+
+| Elemento | Valore |
+|----------|--------|
+| Pagina | A4 verticale, margini 2 cm ai lati e 2,5 cm sopra e sotto |
+| Titolo | `INVENTARIO gg/mm/aaaa – Nome esposizione` (data di inizio; senza data solo il nome), 12 pt |
+| Tabella | griglia, colonne Scatola / Contenuto / Andata / Ritorno in proporzione 1838 : 5670 : 1094 : 1026 |
+| Intestazione | grassetto su sfondo grigio `#D1D1D1`, ripetuta su ogni pagina |
+| Contenuto | elenco puntato, una voce per riga del contenitore |
+| Voce | set: `Nome – Set 76956`; quantità > 1: `10 × alberi`; note tra parentesi |
+| Più inventari | ognuno su una pagina nuova |
+
+Implementazione (`export/`): `ReportBuilder` trasforma l'esposizione in un `InventoryReport`
+indipendente dal formato; `DocxWriter` scrive il .docx a mano (è uno zip di XML, nessuna
+libreria); `PdfWriter` disegna il PDF con `android.graphics.pdf.PdfDocument`, spezzando su più
+pagine i contenitori troppo lunghi. I file da condividere passano dalla cartella temporanea
+`cache/exports/` (esposta tramite FileProvider), che conserva solo l'ultimo export.
+
+Verifica: il test JVM `DocxWriterTest` genera un .docx con i dati del modello, che è stato
+convertito in immagine e confrontato con l'originale. Il workflow **PDF check** genera il PDF
+su un emulatore Android (test `PdfWriterTest`) e lo stampa nel log in base64 per il controllo
+visivo. Il PDF pesa circa 700 KB perché incorpora i caratteri.
+
 ### 7.3 Grafica
 
 - Barra in basso con quattro schede: Catalogo, Contenitori, Esposizioni, Impostazioni.
@@ -422,5 +456,6 @@ I dati esistono solo sul telefono: disinstallare l'app li cancella.
 | Data | Versione | Modifica |
 |------|----------|----------|
 | 2026-11-08 | 1.0 | Prima versione: catalogo, scansione multi-oggetto, ricerca manuale, dettaglio, backup |
+| 2026-11-10 | Aggiornamento 3 | Esportazione dell'inventario di un'esposizione in Word e PDF con il layout del modello cartaceo; colonne andata/ritorno vuote o con le spunte dell'app; condivisione o salvataggio; test automatici di generazione |
 | 2026-11-08 | Aggiornamento 2 | Inventario: contenitori con righe dal catalogo o scritte a mano; esposizioni con checklist andata/ritorno ed evidenza dei mancanti; "Dove si trova" nella scheda oggetto; database v2 con migrazione automatica; nuova grafica (barra in basso, griglia/lista, tema) |
 | 2026-11-08 | Aggiornamento 1 | Rilevamento per sfondo (più minifigure per foto, nessun limite di 5); modalità di riconoscimento Tutto/Set/Minifigure/Pezzi con endpoint dedicati; scelta del metodo di rilevamento; avviso e scelta per gli oggetti già in catalogo (scansione e ricerca); schema Brickognize verificato |
