@@ -3,6 +3,9 @@ name: PDF check
 # Genera un PDF di esempio su un emulatore Android per controllare l'impaginazione.
 on:
   workflow_dispatch:
+  push:
+    branches: [ dev ]
+    paths: [ 'app/src/main/java/com/brickarchivio/app/export/**', 'app/src/androidTest/**', '.github/workflows/pdf-check.yml' ]
 
 jobs:
   pdf:
