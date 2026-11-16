@@ -136,24 +136,34 @@ fun ScannerScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
         }
 
         Column(
-            Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(24.dp),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().safeDrawingPadding().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             galleryMsg?.let {
                 Text(it, color = Color.White, modifier = Modifier.background(Color(0xAA000000), RoundedCornerShape(8.dp)).padding(8.dp))
                 Spacer(Modifier.height(12.dp))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Pulsanti su due righe: entrano anche negli schermi stretti
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (granted) {
-                    FilledTonalButton(onClick = {
-                        torch = !torch
-                        cameraControl?.enableTorch(torch)
-                    }) { Text(if (torch) "Torcia off" else "Torcia on") }
+                    FilledTonalButton(
+                        onClick = {
+                            torch = !torch
+                            cameraControl?.enableTorch(torch)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text(if (torch) "Spegni torcia" else "Torcia", maxLines = 1) }
                 }
-                FilledTonalButton(onClick = {
-                    gallery.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }) { Text("Da una foto") }
-                FilledTonalButton(onClick = onClose) { Text("Scrivi a mano") }
+                FilledTonalButton(
+                    onClick = {
+                        gallery.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Da una foto", maxLines = 1) }
+            }
+            Spacer(Modifier.height(12.dp))
+            FilledTonalButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
+                Text("Scrivi il numero a mano", maxLines = 1)
             }
         }
     }
