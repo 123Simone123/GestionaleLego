@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icona originale: due tessere sovrapposte con un codice a barre -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#B2DFDB" android:pathData="M36,30h40a4,4 0 0,1 4,4v24a4,4 0 0,1 -4,4h-40a4,4 0 0,1 -4,-4v-24a4,4 0 0,1 4,-4z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M30,44h40a4,4 0 0,1 4,4v24a4,4 0 0,1 -4,4h-40a4,4 0 0,1 -4,-4v-24a4,4 0 0,1 4,-4z" />
+    <path android:fillColor="#263238" android:pathData="M34,52h2v16h-2zM38,52h1v16h-1zM41,52h3v16h-3zM46,52h1v16h-1zM49,52h2v16h-2zM53,52h1v16h-1zM56,52h3v16h-3zM61,52h1v16h-1zM64,52h2v16h-2z" />
+</vector>
