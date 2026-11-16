@@ -1,4 +1,4 @@
-name: Build APK Carte Fedelta
+name: Build APK FreeCard
 
 on:
   push:
@@ -29,21 +29,21 @@ jobs:
       - name: Rinomina APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk out/CarteFedelta-${{ github.run_number }}.apk
+          cp app/build/outputs/apk/release/app-release.apk out/FreeCard-${{ github.run_number }}.apk
 
       - name: Carica come artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CarteFedelta-apk
+          name: FreeCard-apk
           path: out/*.apk
 
-      # Dal telefono: pagina "Releases" del repository -> CarteFedelta-N.apk
+      # Dal telefono: pagina "Releases" del repository -> FreeCard-N.apk
       - name: Pubblica release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: carte-build-${{ github.run_number }}
-          name: Carte Fedeltà build ${{ github.run_number }}
+          tag_name: freecard-build-${{ github.run_number }}
+          name: FreeCard build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           make_latest: false
-          body: APK di Carte Fedeltà compilato automaticamente dal commit ${{ github.sha }}.
+          body: APK di FreeCard compilato automaticamente dal commit ${{ github.sha }}.
           files: out/*.apk

@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CarteFedelta"
+rootProject.name = "FreeCard"
 include(":app")

@@ -1,4 +1,4 @@
-# Carte Fedeltà
+# FreeCard
 
 App Android per tenere sul telefono tutte le tessere fedeltà dei negozi (in stile Stocard).
 
@@ -11,4 +11,4 @@ App Android per tenere sul telefono tutte le tessere fedeltà dei negozi (in sti
 ## Scaricare l'APK
 
 Ogni push sul ramo `carte-fedelta` compila l'APK con GitHub Actions e lo pubblica
-nelle **Releases** del repository come `CarteFedelta-N.apk` (release "Carte Fedeltà build N").
+nelle **Releases** del repository come `FreeCard-N.apk` (release "FreeCard build N").

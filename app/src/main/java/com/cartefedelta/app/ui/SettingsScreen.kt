@@ -84,7 +84,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
             Button(onClick = {
                 val date = SimpleDateFormat("yyyy-MM-dd", Locale.ITALY).format(Date())
-                exportLauncher.launch("carte-fedelta-$date.json")
+                exportLauncher.launch("freecard-$date.json")
             }, modifier = Modifier.fillMaxWidth()) { Text("Esporta backup") }
             OutlinedButton(
                 onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) },
@@ -97,7 +97,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             } catch (e: Exception) {
                 "?"
             }
-            Text("Carte Fedeltà versione $version")
+            Text("FreeCard versione $version")
             Text(
                 "Suggerimento: tieni premuta una carta nella lista per metterla tra le preferite, modificarla o eliminarla.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant

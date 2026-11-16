@@ -30,7 +30,7 @@ object Backup {
             })
         }
         val root = JSONObject().apply {
-            put("app", "CarteFedelta")
+            put("app", "FreeCard")
             put("version", 1)
             put("cards", arr)
         }
