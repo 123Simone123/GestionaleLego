@@ -5,7 +5,7 @@ const path = require('path');
 const site = process.argv[2];
 
 function loadBrowser(file, globalName) {
-  const ctx = { window: {}, self: {}, console, setTimeout, clearTimeout, navigator: { userAgent: 'node' } };
+  const ctx = { window: {}, self: {}, console, setTimeout, clearTimeout, atob, btoa, TextEncoder, TextDecoder, navigator: { userAgent: 'node' } };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(site, file), 'utf8'), ctx);
