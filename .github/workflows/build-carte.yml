@@ -47,3 +47,38 @@ jobs:
           make_latest: false
           body: APK di FreeCard compilato automaticamente dal commit ${{ github.sha }}.
           files: out/*.apk
+
+  # Webapp (per iPhone e qualsiasi browser), pubblicata con GitHub Pages dal ramo gh-pages
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepara il sito
+        run: |
+          mkdir -p /tmp/libs && cd /tmp/libs
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund @zxing/library@^0.21.0 bwip-js@^3
+          ls node_modules/@zxing/library/umd node_modules/bwip-js/dist || true
+          cd "$GITHUB_WORKSPACE"
+          rm -rf site && cp -r web site && rm -rf site/tools
+          mkdir -p site/vendor
+          cp /tmp/libs/node_modules/@zxing/library/umd/index.min.js site/vendor/zxing.min.js
+          cp /tmp/libs/node_modules/bwip-js/dist/bwip-js-min.js site/vendor/bwip-js-min.js
+          sed -i "s/__BUILD__/${{ github.run_number }}/g" site/*.html site/*.js
+          touch site/.nojekyll
+
+      - name: Controlla librerie e codici
+        run: NODE_PATH=/tmp/libs/node_modules node web/tools/check-vendor.js site
+
+      - name: Pubblica su gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
+          force_orphan: true
