@@ -161,11 +161,21 @@
   function drawCode(canvas, text, formatId) {
     if (!window.bwipjs) return { ok: false, error: 'Libreria codici non caricata' };
     const tryDraw = (f) => {
-      const opts = { bcid: f.bcid, text, scale: f.twoD ? 4 : 3, includetext: false };
-      if (!f.twoD) opts.height = 18;
+      const opts = { bcid: f.bcid, text, scale: 1, includetext: false };
+      if (f.twoD) opts.padding = 2; else { opts.height = 18; opts.paddingwidth = 10; } // margine bianco per i lettori
       if (f.bcid === 'qrcode') opts.eclevel = 'M';
+      // Prima prova a scala 1 per sapere quanti moduli ha il codice, poi scala intera che riempie lo spazio:
+      // ogni barra resta di pixel interi, così le casse lo leggono meglio.
+      window.bwipjs.toCanvas(canvas, opts);
+      const dpr = window.devicePixelRatio || 1;
+      let avail = ((canvas.parentElement && canvas.parentElement.clientWidth) || 0) - 40;
+      if (avail <= 0) avail = 320;
+      if (f.twoD) avail *= 0.75;
+      opts.scale = Math.max(1, Math.floor((avail * dpr) / canvas.width));
+      if (!f.twoD) opts.scaleY = opts.scale;
       window.bwipjs.toCanvas(canvas, opts);
       canvas.className = f.twoD ? 'twod' : 'oned';
+      canvas.style.width = (canvas.width / dpr) + 'px';
     };
     const f = fmt(formatId);
     try { tryDraw(f); return { ok: true, format: f, fellBack: false }; } catch (e) { /* ripiego */ }

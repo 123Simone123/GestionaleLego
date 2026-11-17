@@ -36,8 +36,8 @@ const samples = {
 (async () => {
   for (const [bcid, text] of Object.entries(samples)) {
     const twoD = ['qrcode', 'pdf417', 'azteccode', 'datamatrix'].includes(bcid);
-    const opts = { bcid, text, scale: twoD ? 4 : 3, includetext: false };
-    if (!twoD) opts.height = 18;
+    const opts = { bcid, text, scale: 3, includetext: false };
+    if (twoD) opts.padding = 2; else { opts.height = 18; opts.paddingwidth = 10; opts.scaleY = 3; }
     if (bcid === 'qrcode') opts.eclevel = 'M';
     await bwip.toBuffer(opts);
   }
