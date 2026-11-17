@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +52,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cartefedelta.app.barcode.CodeFormat
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -102,7 +104,15 @@ fun ScannerScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (granted) {
-            CameraPreview(onResult = onResult, onCamera = { cameraControl = it })
+            val done = remember { AtomicBoolean(false) }
+            CameraPreview(onBarcodes = { list ->
+                val b = list.firstOrNull {
+                    it.rawValue != null && !it.rawValue!!.startsWith("FREECARD1|") && CodeFormat.fromMlKit(it.format) != null
+                }
+                if (b != null && done.compareAndSet(false, true)) {
+                    onResult(ScanResult(b.rawValue!!, CodeFormat.fromMlKit(b.format)!!))
+                }
+            }, onCamera = { cameraControl = it })
             // Mirino
             Box(
                 Modifier
@@ -171,12 +181,12 @@ fun ScannerScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
 
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @Composable
-private fun CameraPreview(onResult: (ScanResult) -> Unit, onCamera: (androidx.camera.core.CameraControl) -> Unit) {
+fun CameraPreview(onBarcodes: (List<Barcode>) -> Unit, onCamera: (androidx.camera.core.CameraControl) -> Unit = {}) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember { Executors.newSingleThreadExecutor() }
     val scanner = remember { BarcodeScanning.getClient() }
-    val done = remember { AtomicBoolean(false) }
+    val currentOnBarcodes = rememberUpdatedState(onBarcodes)
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
     DisposableEffect(lifecycleOwner) {
@@ -189,18 +199,13 @@ private fun CameraPreview(onResult: (ScanResult) -> Unit, onCamera: (androidx.ca
                 .build()
             analysis.setAnalyzer(executor) { proxy ->
                 val media = proxy.image
-                if (media == null || done.get()) {
+                if (media == null) {
                     proxy.close()
                     return@setAnalyzer
                 }
                 val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
                 scanner.process(image)
-                    .addOnSuccessListener { list ->
-                        val b = list.firstOrNull { it.rawValue != null && CodeFormat.fromMlKit(it.format) != null }
-                        if (b != null && done.compareAndSet(false, true)) {
-                            onResult(ScanResult(b.rawValue!!, CodeFormat.fromMlKit(b.format)!!))
-                        }
-                    }
+                    .addOnSuccessListener { list -> if (list.isNotEmpty()) currentOnBarcodes.value(list) }
                     .addOnCompleteListener { proxy.close() }
             }
             try {

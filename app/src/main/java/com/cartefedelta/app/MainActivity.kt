@@ -14,6 +14,8 @@ import com.cartefedelta.app.ui.AppTheme
 import com.cartefedelta.app.ui.CardScreen
 import com.cartefedelta.app.ui.EditCardScreen
 import com.cartefedelta.app.ui.HomeScreen
+import com.cartefedelta.app.ui.ReceiveScreen
+import com.cartefedelta.app.ui.ShareScreen
 import com.cartefedelta.app.ui.SettingsScreen
 import com.cartefedelta.app.ui.StorePickerScreen
 
@@ -30,7 +32,9 @@ class MainActivity : ComponentActivity() {
                             onOpen = { nav.navigate("card/$it") },
                             onAdd = { nav.navigate("pick") },
                             onEdit = { nav.navigate("edit/$it") },
-                            onSettings = { nav.navigate("settings") }
+                            onSettings = { nav.navigate("settings") },
+                            onShareAll = { nav.navigate("share/-1") },
+                            onReceive = { nav.navigate("receive") }
                         )
                     }
                     composable("pick") {
@@ -72,9 +76,17 @@ class MainActivity : ComponentActivity() {
                         CardScreen(
                             cardId = id,
                             onEdit = { nav.navigate("edit/$id") },
+                            onShareQr = { nav.navigate("share/$id") },
                             onBack = { nav.popBackStack() }
                         )
                     }
+                    composable(
+                        "share/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.LongType })
+                    ) { entry ->
+                        ShareScreen(cardId = entry.arguments?.getLong("id") ?: -1L, onBack = { nav.popBackStack() })
+                    }
+                    composable("receive") { ReceiveScreen(onDone = { nav.popBackStack() }) }
                     composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }) }
                 }
             }

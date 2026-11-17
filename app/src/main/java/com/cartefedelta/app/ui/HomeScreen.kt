@@ -27,6 +27,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +64,14 @@ private fun prefs(context: Context) = context.getSharedPreferences("settings", C
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun HomeScreen(onOpen: (Long) -> Unit, onAdd: () -> Unit, onEdit: (Long) -> Unit, onSettings: () -> Unit) {
+fun HomeScreen(
+    onOpen: (Long) -> Unit,
+    onAdd: () -> Unit,
+    onEdit: (Long) -> Unit,
+    onSettings: () -> Unit,
+    onShareAll: () -> Unit,
+    onReceive: () -> Unit
+) {
     val context = LocalContext.current
     val dao = remember { AppDatabase.get(context).cards() }
     val cards by dao.observeAll().collectAsStateWithLifecycle(initialValue = null)
@@ -113,7 +121,7 @@ fun HomeScreen(onOpen: (Long) -> Unit, onAdd: () -> Unit, onEdit: (Long) -> Unit
                         Icon(if (searching) Icons.Filled.Clear else Icons.Filled.Search, "Cerca")
                     }
                     Box {
-                        IconButton(onClick = { sortMenu = true }) { Icon(Icons.Filled.MoreVert, "Ordina") }
+                        IconButton(onClick = { sortMenu = true }) { Icon(Icons.Filled.MoreVert, "Menu") }
                         DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                             SortMode.entries.forEach { mode ->
                                 DropdownMenuItem(
@@ -125,6 +133,9 @@ fun HomeScreen(onOpen: (Long) -> Unit, onAdd: () -> Unit, onEdit: (Long) -> Unit
                                     }
                                 )
                             }
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("Condividi tutte (QR)") }, onClick = { sortMenu = false; onShareAll() })
+                            DropdownMenuItem(text = { Text("Ricevi carte (QR)") }, onClick = { sortMenu = false; onReceive() })
                         }
                     }
                     IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, "Impostazioni") }
@@ -149,7 +160,7 @@ fun HomeScreen(onOpen: (Long) -> Unit, onAdd: () -> Unit, onEdit: (Long) -> Unit
                 Text("Nessuna carta ancora", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Tocca «Aggiungi carta», scegli il negozio e inquadra il codice a barre della tessera.",
+                    "Tocca «Aggiungi carta», scegli il negozio e inquadra il codice a barre della tessera.\nOppure ricevi le carte da un altro telefono con il QR.",
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

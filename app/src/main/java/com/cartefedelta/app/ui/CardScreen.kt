@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,33 +66,18 @@ import kotlinx.coroutines.launch
 /** Carta aperta alla cassa: codice grande, luminosità al massimo, schermo sempre acceso. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CardScreen(cardId: Long, onEdit: () -> Unit, onBack: () -> Unit) {
+fun CardScreen(cardId: Long, onEdit: () -> Unit, onShareQr: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val dao = remember { AppDatabase.get(context).cards() }
     val card by dao.observe(cardId).collectAsStateWithLifecycle(initialValue = null)
     val scope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf(false) }
     var zoomPhoto by remember { mutableStateOf<String?>(null) }
+    var shareMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(cardId) { dao.markUsed(cardId) }
 
-    // Luminosità massima finché la carta è aperta
-    DisposableEffect(Unit) {
-        val window = (context as? Activity)?.window
-        val previous = window?.attributes?.screenBrightness
-        window?.let {
-            it.attributes = it.attributes.apply { screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL }
-            it.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-        onDispose {
-            window?.let {
-                it.attributes = it.attributes.apply {
-                    screenBrightness = previous ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                }
-                it.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
-        }
-    }
+    MaxBrightness()
 
     val c = card
     val barColor = c?.color?.let { Color(it) } ?: MaterialTheme.colorScheme.surface
@@ -110,12 +97,22 @@ fun CardScreen(cardId: Long, onEdit: () -> Unit, onBack: () -> Unit) {
                         IconButton(onClick = { scope.launch { dao.setFavorite(c.id, !c.favorite) } }) {
                             Icon(Icons.Filled.Star, "Preferita", tint = if (c.favorite) Color(0xFFFFD54F) else onBar.copy(alpha = 0.5f))
                         }
-                        IconButton(onClick = {
-                            val text = "${c.name}: ${c.displayNumber.ifBlank { c.number }}"
-                            context.startActivity(Intent.createChooser(
-                                Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Condividi numero"
-                            ))
-                        }) { Icon(Icons.Filled.Share, "Condividi") }
+                        Box {
+                            IconButton(onClick = { shareMenu = true }) { Icon(Icons.Filled.Share, "Condividi") }
+                            DropdownMenu(expanded = shareMenu, onDismissRequest = { shareMenu = false }) {
+                                DropdownMenuItem(text = { Text("QR per un altro telefono") }, onClick = {
+                                    shareMenu = false
+                                    onShareQr()
+                                })
+                                DropdownMenuItem(text = { Text("Invia il numero come testo") }, onClick = {
+                                    shareMenu = false
+                                    val text = "${c.name}: ${c.displayNumber.ifBlank { c.number }}"
+                                    context.startActivity(Intent.createChooser(
+                                        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Condividi numero"
+                                    ))
+                                })
+                            }
+                        }
                         IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Modifica") }
                         IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Filled.Delete, "Elimina") }
                     }
@@ -211,6 +208,28 @@ fun CardScreen(cardId: Long, onEdit: () -> Unit, onBack: () -> Unit) {
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        }
+    }
+}
+
+/** Luminosità massima e schermo acceso finché il composable è visibile. */
+@Composable
+fun MaxBrightness() {
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        val previous = window?.attributes?.screenBrightness
+        window?.let {
+            it.attributes = it.attributes.apply { screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL }
+            it.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.let {
+                it.attributes = it.attributes.apply {
+                    screenBrightness = previous ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+                it.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
     }
