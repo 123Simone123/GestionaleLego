@@ -5,7 +5,7 @@ const path = require('path');
 const site = process.argv[2];
 
 function loadBrowser(file, globalName) {
-  const ctx = { window: {}, self: {}, console, setTimeout, clearTimeout, atob, btoa, TextEncoder, TextDecoder, navigator: { userAgent: 'node' } };
+  const ctx = { window: {}, self: {}, console, URL, fetch: globalThis.fetch, WebAssembly, setTimeout, clearTimeout, atob, btoa, TextEncoder, TextDecoder, navigator: { userAgent: 'node' } };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(site, file), 'utf8'), ctx);
@@ -23,6 +23,9 @@ if (typeof ZX.BrowserMultiFormatReader.prototype.decodeFromImageUrl !== 'functio
 for (const f of ['EAN_13', 'EAN_8', 'UPC_A', 'UPC_E', 'CODE_128', 'CODE_39', 'CODE_93', 'ITF', 'CODABAR', 'QR_CODE', 'PDF_417', 'AZTEC', 'DATA_MATRIX']) {
   if (ZX.BarcodeFormat[ZX.BarcodeFormat[f]] !== f) throw new Error('BarcodeFormat ' + f);
 }
+const W = loadBrowser('vendor/zxing-wasm-reader.js', 'ZXingWASM');
+for (const k of ['readBarcodes', 'prepareZXingModule']) if (typeof W[k] !== 'function') throw new Error('ZXingWASM.' + k + ' mancante');
+if (!fs.existsSync(path.join(site, 'vendor/zxing_reader.wasm'))) throw new Error('zxing_reader.wasm mancante');
 const B = loadBrowser('vendor/bwip-js-min.js', 'bwipjs');
 if (typeof B.toCanvas !== 'function') throw new Error('bwipjs.toCanvas mancante');
 

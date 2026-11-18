@@ -2,7 +2,7 @@
 const CACHE = 'freecard-__BUILD__';
 const FILES = [
   './', 'index.html', 'style.css?v=__BUILD__', 'app.js?v=__BUILD__', 'codec.js?v=__BUILD__', 'stores.js?v=__BUILD__',
-  'vendor/zxing.min.js', 'vendor/bwip-js-min.js', 'manifest.webmanifest',
+  'vendor/zxing.min.js', 'vendor/zxing-wasm-reader.js', 'vendor/zxing_reader.wasm', 'vendor/bwip-js-min.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
 ];
 

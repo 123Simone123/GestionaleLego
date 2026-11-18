@@ -263,11 +263,53 @@
   const CROPS_1D = [[0.08, 0.3, 0.84, 0.4], [0, 0, 1, 1], [0.2, 0.2, 0.6, 0.6], [0.3, 0.08, 0.4, 0.84, true]];
   const CROPS_QR = [[0.1, 0.15, 0.8, 0.7], [0, 0, 1, 1]];
 
+  // Lettore principale: ZXing-C++ in WebAssembly (molto più robusto). @zxing/library resta di riserva.
+  const WASM_FMT = {
+    'EAN-13': 'EAN_13', 'EAN-8': 'EAN_8', 'UPC-A': 'UPC_A', 'UPC-E': 'UPC_E', Code128: 'CODE_128', Code39: 'CODE_39',
+    Code93: 'CODE_93', ITF: 'ITF', Codabar: 'CODABAR', QRCode: 'QR_CODE', PDF417: 'PDF_417', Aztec: 'AZTEC', DataMatrix: 'DATA_MATRIX'
+  };
+  let wasmState = 'idle'; // idle | ok | failed
+  function wasmReader() {
+    if (wasmState === 'failed' || !window.ZXingWASM) return null;
+    if (wasmState === 'idle') {
+      try {
+        ZXingWASM.prepareZXingModule({
+          overrides: { locateFile: (path, prefix) => (path.endsWith('.wasm') ? new URL('vendor/' + path, location.href).href : prefix + path) },
+          fireImmediately: true
+        });
+        wasmState = 'ok';
+      } catch (e) { wasmState = 'failed'; return null; }
+    }
+    return ZXingWASM;
+  }
+  /** Legge dal canvas: prima WebAssembly, poi (se non disponibile) @zxing/library con i ritagli. */
+  async function decodeAny(canvas, qrOnly, jsReader, jsCrop) {
+    const Z = wasmReader();
+    if (Z) {
+      try {
+        const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
+        const res = await Z.readBarcodes(data, {
+          formats: qrOnly ? ['QRCode'] : Object.keys(WASM_FMT),
+          tryHarder: true, maxNumberOfSymbols: 1, returnCodabarStartEnd: true
+        });
+        const r = res.find((x) => x.isValid && WASM_FMT[x.format]);
+        return r ? { value: r.text, format: WASM_FMT[r.format] } : null;
+      } catch (e) {
+        wasmState = 'failed';
+      }
+    }
+    return jsCrop ? jsCrop() : decodeCanvas(jsReader, canvas);
+  }
+
   /** Legge un codice da una foto (galleria o scatto). */
   async function scanFile(file, qrOnly = false) {
     const img = await loadImage(file);
     const reader = makeDecoder(qrOnly);
     const canvas = document.createElement('canvas');
+    if (wasmReader()) {
+      const r = await decodeAny(cropTo(canvas, img, img.naturalWidth, img.naturalHeight, 0, 0, 1, 1, 2000), qrOnly, reader);
+      if (r || wasmState === 'ok') return r;
+    }
     const crops = [[0, 0, 1, 1], [0.1, 0.1, 0.8, 0.8], [0.2, 0.25, 0.6, 0.5], [0, 0, 1, 1, true], [0.25, 0.1, 0.5, 0.8, true]];
     for (const maxW of [1200, 800, 1800]) {
       for (const [x, y, w, h, rot] of crops) {
@@ -347,12 +389,21 @@
       const crops = qrOnly ? CROPS_QR : CROPS_1D;
       let n = 0;
       let last = null;
-      const tick = () => {
+      const tick = async () => {
         if (closed) return;
         const vw = video.videoWidth, vh = video.videoHeight;
         if (vw && vh) {
-          const [x, y, w, h, rot] = crops[n++ % crops.length];
-          const r = decodeCanvas(reader, cropTo(canvas, video, vw, vh, x, y, w, h, 1000, rot));
+          let r;
+          if (wasmReader()) {
+            r = await decodeAny(cropTo(canvas, video, vw, vh, 0, 0, 1, 1, 1280), qrOnly, reader, () => {
+              const [x, y, w, h, rot] = crops[n++ % crops.length];
+              return decodeCanvas(reader, cropTo(canvas, video, vw, vh, x, y, w, h, 1000, rot));
+            });
+          } else {
+            const [x, y, w, h, rot] = crops[n++ % crops.length];
+            r = decodeCanvas(reader, cropTo(canvas, video, vw, vh, x, y, w, h, 1000, rot));
+          }
+          if (closed) return;
           if (r) {
             // Un codice a barre (1D) va letto due volte uguale prima di accettarlo: evita letture sbagliate.
             const sure = TWO_D.includes(r.format) || r.value.startsWith(Codec.PREFIX) || last === r.format + '|' + r.value;
@@ -360,7 +411,7 @@
             if (sure && onCode(r.value, r.format)) { close(); return; }
           }
         }
-        timer = setTimeout(tick, 60);
+        timer = setTimeout(tick, 40);
       };
       tick();
     };
