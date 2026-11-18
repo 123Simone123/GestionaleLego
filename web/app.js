@@ -163,7 +163,7 @@
     const tryDraw = (f) => {
       const opts = { bcid: f.bcid, text, scale: 1, includetext: false };
       if (f.twoD) opts.padding = 2; else { opts.height = 18; opts.paddingwidth = 10; } // margine bianco per i lettori
-      if (f.bcid === 'qrcode') opts.eclevel = 'M';
+      if (f.bcid === 'qrcode') opts.eclevel = text.startsWith(Codec.PREFIX) ? 'L' : 'M';
       // Prima prova a scala 1 per sapere quanti moduli ha il codice, poi scala intera che riempie lo spazio:
       // ogni barra resta di pixel interi, così le casse lo leggono meglio.
       window.bwipjs.toCanvas(canvas, opts);
@@ -215,37 +215,78 @@
   }
 
   // ---------- Fotocamera e lettura codici ----------
-  function makeReader() {
+  // Lettura dei codici: facciamo noi il ciclo sui fotogrammi e ritagliamo la zona del mirino.
+  // Con @zxing/library: niente TRY_HARDER (legge codici 1D inesistenti dentro i QR) e meglio
+  // ritagliare, perché lo sfondo attorno al codice confonde il riconoscimento.
+  const TWO_D = ['QR_CODE', 'PDF_417', 'AZTEC', 'DATA_MATRIX'];
+  function makeDecoder(qrOnly) {
     if (!window.ZXing) throw new Error('Libreria scanner non caricata');
-    const hints = new Map();
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    return new ZXing.BrowserMultiFormatReader(hints, 250);
+    const reader = new ZXing.MultiFormatReader();
+    if (qrOnly) {
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
+      reader.setHints(hints);
+    } else reader.setHints(null);
+    return reader;
   }
-  const formatName = (result) => ZXing.BarcodeFormat[result.getBarcodeFormat()];
+  /** Prova a leggere un codice dal canvas (due binarizzatori). Restituisce {value, format} o null. */
+  function decodeCanvas(reader, canvas) {
+    const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+    for (const Bin of [ZXing.HybridBinarizer, ZXing.GlobalHistogramBinarizer]) {
+      if (!Bin) continue;
+      try {
+        const r = reader.decodeWithState(new ZXing.BinaryBitmap(new Bin(source)));
+        return { value: r.getText(), format: ZXing.BarcodeFormat[r.getBarcodeFormat()] };
+      } catch (e) { /* non trovato */ } finally { try { reader.reset(); } catch (e) { /* */ } }
+    }
+    return null;
+  }
+  /** Copia nel canvas il rettangolo (frazioni 0..1) della sorgente, ridimensionato a max maxW px. */
+  function cropTo(canvas, src, sw, sh, fx, fy, fw, fh, maxW = 1000, rotate = false) {
+    const w = Math.round(sw * fw), h = Math.round(sh * fh);
+    const k = Math.min(1, maxW / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * k)), ch = Math.max(1, Math.round(h * k));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (rotate) {
+      canvas.width = ch; canvas.height = cw;
+      ctx.setTransform(0, 1, -1, 0, ch, 0);
+    } else {
+      canvas.width = cw; canvas.height = ch;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    ctx.drawImage(src, Math.round(sw * fx), Math.round(sh * fy), w, h, 0, 0, cw, ch);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return canvas;
+  }
+  let activeScanner = null; // per spegnere la fotocamera quando si cambia pagina
+  // Ritagli da provare: [x, y, larghezza, altezza, ruota]
+  const CROPS_1D = [[0.08, 0.3, 0.84, 0.4], [0, 0, 1, 1], [0.2, 0.2, 0.6, 0.6], [0.3, 0.08, 0.4, 0.84, true]];
+  const CROPS_QR = [[0.1, 0.15, 0.8, 0.7], [0, 0, 1, 1]];
 
   /** Legge un codice da una foto (galleria o scatto). */
-  async function scanFile(file) {
-    const reader = makeReader();
-    const url = await imageToDataUrl(file, 1600, 0.92);
-    try {
-      const r = await reader.decodeFromImageUrl(url);
-      return { value: r.getText(), format: formatName(r) };
-    } catch (e) {
-      return null;
-    } finally {
-      try { reader.reset(); } catch (e) { /* */ }
+  async function scanFile(file, qrOnly = false) {
+    const img = await loadImage(file);
+    const reader = makeDecoder(qrOnly);
+    const canvas = document.createElement('canvas');
+    const crops = [[0, 0, 1, 1], [0.1, 0.1, 0.8, 0.8], [0.2, 0.25, 0.6, 0.5], [0, 0, 1, 1, true], [0.25, 0.1, 0.5, 0.8, true]];
+    for (const maxW of [1200, 800, 1800]) {
+      for (const [x, y, w, h, rot] of crops) {
+        const r = decodeCanvas(reader, cropTo(canvas, img, img.naturalWidth, img.naturalHeight, x, y, w, h, maxW, rot));
+        if (r) return r;
+      }
     }
+    return null;
   }
 
   /**
    * Scanner a tutto schermo. onCode(text, formatName) riceve ogni codice letto:
    * se restituisce true lo scanner si chiude.
    */
-  function openScanner({ title, frameHeight = 220, extraButtons = true, onCode, onManual, onClose }) {
+  function openScanner({ title, frameHeight = 220, extraButtons = true, qrOnly = false, onCode, onManual, onClose }) {
     const el = document.createElement('div');
     el.className = 'scanner';
     el.innerHTML = `
-      <video playsinline muted autoplay></video>
+      <video playsinline muted></video>
       <div class="frame" style="height:${frameHeight}px"></div>
       <div class="top"><button class="icon-btn" data-x>${icon('close')}</button><h2>${esc(title)}</h2></div>
       <div class="bottom">
@@ -258,13 +299,18 @@
     const video = el.querySelector('video');
     const msg = el.querySelector('.msg');
     const showMsg = (html) => { msg.hidden = !html; msg.innerHTML = html || ''; };
-    let reader = null;
+    let stream = null;
+    let timer = null;
     let closed = false;
+    if (activeScanner) activeScanner();
+    activeScanner = () => close();
 
     const close = (cb) => {
       if (closed) return;
       closed = true;
-      try { reader && reader.reset(); } catch (e) { /* */ }
+      clearTimeout(timer);
+      activeScanner = null;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
       el.remove();
       if (cb) cb();
     };
@@ -275,23 +321,50 @@
         const file = await pickImage();
         if (!file) return;
         showMsg('Lettura della foto…');
-        const r = await scanFile(file);
+        const r = await scanFile(file, qrOnly);
         if (r && onCode(r.value, r.format)) close();
         else if (!closed) showMsg('Nessun codice trovato nella foto');
       };
     }
 
-    try {
-      reader = makeReader();
-      reader.decodeFromConstraints({ audio: false, video: { facingMode: { ideal: 'environment' } } }, video, (result) => {
-        if (closed || !result) return;
-        if (onCode(result.getText(), formatName(result))) close();
-      }).catch((e) => {
-        showMsg('Fotocamera non disponibile: ' + esc(e && e.name === 'NotAllowedError' ? 'permesso negato. Puoi abilitarlo nelle impostazioni del browser.' : (e && e.message) || e));
-      });
-    } catch (e) {
-      showMsg(esc(e.message));
-    }
+    const start = async () => {
+      let reader;
+      try {
+        reader = makeDecoder(qrOnly);
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        });
+      } catch (e) {
+        showMsg('Fotocamera non disponibile: ' + esc(e && e.name === 'NotAllowedError'
+          ? 'permesso negato. Puoi abilitarlo nelle impostazioni (Safari → Fotocamera).' : (e && e.message) || e));
+        return;
+      }
+      if (closed) { stream.getTracks().forEach((t) => t.stop()); return; }
+      video.srcObject = stream;
+      try { await video.play(); } catch (e) { /* iOS: parte comunque con muted+playsinline */ }
+      const canvas = document.createElement('canvas');
+      const crops = qrOnly ? CROPS_QR : CROPS_1D;
+      let n = 0;
+      let last = null;
+      const tick = () => {
+        if (closed) return;
+        const vw = video.videoWidth, vh = video.videoHeight;
+        if (vw && vh) {
+          const [x, y, w, h, rot] = crops[n++ % crops.length];
+          const r = decodeCanvas(reader, cropTo(canvas, video, vw, vh, x, y, w, h, 1000, rot));
+          if (r) {
+            // Un codice a barre (1D) va letto due volte uguale prima di accettarlo: evita letture sbagliate.
+            const sure = TWO_D.includes(r.format) || r.value.startsWith(Codec.PREFIX) || last === r.format + '|' + r.value;
+            last = r.format + '|' + r.value;
+            if (sure && onCode(r.value, r.format)) { close(); return; }
+          }
+        }
+        timer = setTimeout(tick, 60);
+      };
+      tick();
+    };
+    start();
     return { close: () => close(), showMsg, el };
   }
 
@@ -321,6 +394,7 @@
     if (history.length > 1 && sessionStorage.getItem('fc-nav')) history.back(); else go(fallback, true);
   }
   async function render() {
+    if (activeScanner) activeScanner();
     $overlay.innerHTML = '';
     document.querySelectorAll('.dialog-back,.menu').forEach((e) => e.remove());
     wantAwake = false;
@@ -686,7 +760,7 @@
       const timer = setInterval(() => {
         if (!document.body.contains(canvas)) { clearInterval(timer); return; }
         if (playing) { i = (i + 1) % qrs.length; show(); }
-      }, 900);
+      }, 1300);
       const playBtn = body.querySelector('[data-play]');
       body.querySelector('[data-prev]').onclick = () => { playing = false; playBtn.textContent = 'Scorri'; i = (i - 1 + qrs.length) % qrs.length; show(); };
       body.querySelector('[data-next]').onclick = () => { playing = false; playBtn.textContent = 'Scorri'; i = (i + 1) % qrs.length; show(); };
@@ -705,6 +779,7 @@
       title: 'Ricevi carte',
       frameHeight: 300,
       extraButtons: false,
+      qrOnly: true,
       onCode: (text) => {
         if (done || !col.add(text)) return false;
         if (col.expected > 1) {

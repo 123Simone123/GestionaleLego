@@ -4,7 +4,7 @@
 (function (root) {
   'use strict';
   const PREFIX = 'FREECARD1|';
-  const CHUNK = 600;
+  const CHUNK = 250; // QR poco fitti: si leggono bene anche da uno schermo
 
   function toB64(bytes) {
     let s = '';

@@ -19,7 +19,7 @@ import java.util.zip.Inflater
  */
 object ShareCodec {
     const val PREFIX = "FREECARD1|"
-    private const val CHUNK = 600
+    private const val CHUNK = 400
 
     data class SharedCard(
         val name: String,

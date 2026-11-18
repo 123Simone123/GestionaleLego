@@ -62,13 +62,17 @@ jobs:
         run: |
           mkdir -p /tmp/libs && cd /tmp/libs
           npm init -y > /dev/null
-          npm install --no-audit --no-fund @zxing/library@^0.21.0 bwip-js@^3
+          npm install --no-audit --no-fund @zxing/library@^0.21.0 bwip-js@^3 zxing-wasm@^2
+          echo '--- zxing-wasm'; cat node_modules/zxing-wasm/package.json | head -40; find node_modules/zxing-wasm/dist -maxdepth 3 | grep -i 'iife\|wasm$' | head -30
           ls node_modules/@zxing/library/umd node_modules/bwip-js/dist || true
           cd "$GITHUB_WORKSPACE"
           rm -rf site && cp -r web site && rm -rf site/tools
           mkdir -p site/vendor
           cp /tmp/libs/node_modules/@zxing/library/umd/index.min.js site/vendor/zxing.min.js
           cp /tmp/libs/node_modules/bwip-js/dist/bwip-js-min.js site/vendor/bwip-js-min.js
+          # zxing-cpp in WebAssembly (lettore più robusto)
+          cp /tmp/libs/node_modules/zxing-wasm/dist/iife/reader/index.js site/vendor/zxing-wasm-reader.js
+          cp "$(find /tmp/libs/node_modules/zxing-wasm/dist -name 'zxing_reader.wasm' | head -1)" site/vendor/zxing_reader.wasm
           sed -i "s/__BUILD__/${{ github.run_number }}/g" site/*.html site/*.js
           touch site/.nojekyll
 
